@@ -5,6 +5,8 @@
 #include <cmath>
 #include <limits>
 #include <utility>
+#include <chrono>
+#include <omp.h>
 
 // Function to read CSV file and store coordinates in a vector of pairs
 std::vector<std::pair<double, double>> readCSV(const std::string& filename) {
@@ -38,50 +40,16 @@ double calculateDistance(double x1, double y1, double x2, double y2) {
 
 // Function to calculate wraparound distance
 double calculateWraparoundDistance(double x1, double y1, double x2, double y2) {
-    // Direct differences
     double dx = std::abs(x2 - x1);
     double dy = std::abs(y2 - y1);
 
-    // Wraparound differences
     double wrapDx = std::min(dx, 1.0 - dx);
     double wrapDy = std::min(dy, 1.0 - dy);
 
-    // Shortest path in wraparound geometry
     return std::sqrt(wrapDx * wrapDx + wrapDy * wrapDy);
 }
 
-// Function to calculate nearest and furthest distances using wraparound geometry
-void calculateWraparoundDistances(const std::vector<std::pair<double, double>>& locations) {
-    std::ofstream nearestFile("nearest_wraparound.txt");
-    std::ofstream furthestFile("furthest_wraparound.txt");
-
-    if (!nearestFile.is_open() || !furthestFile.is_open()) {
-        std::cerr << "Error: Could not open output files for wraparound distances." << std::endl;
-        return;
-    }
-
-    for (const auto& point : locations) {
-        double nearest = std::numeric_limits<double>::max(); // Start with the largest possible value
-        double furthest = 0.0; // Start with the smallest possible value
-
-        for (const auto& otherPoint : locations) {
-            if (point == otherPoint) continue; // Skip the same point
-
-            double distance = calculateWraparoundDistance(point.first, point.second, otherPoint.first, otherPoint.second);
-            nearest = std::min(nearest, distance);
-            furthest = std::max(furthest, distance);
-        }
-
-        nearestFile << nearest << "\n";
-        furthestFile << furthest << "\n";
-    }
-
-    nearestFile.close();
-    furthestFile.close();
-    std::cout << "Wraparound distances have been saved to 'nearest_wraparound.txt' and 'furthest_wraparound.txt'." << std::endl;
-}
-
-// Function to calculate nearest and furthest distances using standard geometry
+// Function to calculate nearest and furthest distances using standard geometry with OpenMP
 void calculateDistances(const std::vector<std::pair<double, double>>& locations) {
     std::ofstream nearestFile("nearest.txt");
     std::ofstream furthestFile("furthest.txt");
@@ -91,43 +59,134 @@ void calculateDistances(const std::vector<std::pair<double, double>>& locations)
         return;
     }
 
-    for (const auto& point : locations) {
-        double nearest = std::numeric_limits<double>::max(); // Start with the largest possible value
-        double furthest = 0.0; // Start with the smallest possible value
+    double totalNearest = 0.0;
+    double totalFurthest = 0.0;
 
-        for (const auto& otherPoint : locations) {
-            if (point == otherPoint) continue; // Skip the same point
+    #pragma omp parallel
+    {
+        double threadNearestSum = 0.0; // Local reduction for nearest
+        double threadFurthestSum = 0.0; // Local reduction for furthest
 
-            double distance = calculateDistance(point.first, point.second, otherPoint.first, otherPoint.second);
-            nearest = std::min(nearest, distance);
-            furthest = std::max(furthest, distance);
+        #pragma omp for schedule(dynamic) // Parallel loop for dynamic scheduling
+        for (size_t i = 0; i < locations.size(); ++i) {
+            double nearest = std::numeric_limits<double>::max();
+            double furthest = 0.0;
+
+            for (size_t j = 0; j < locations.size(); ++j) {
+                if (i == j) continue;
+
+                double distance = calculateDistance(locations[i].first, locations[i].second,
+                                                    locations[j].first, locations[j].second);
+                nearest = std::min(nearest, distance);
+                furthest = std::max(furthest, distance);
+            }
+
+            threadNearestSum += nearest;
+            threadFurthestSum += furthest;
+
+            #pragma omp critical
+            {
+                nearestFile << nearest << "\n";
+                furthestFile << furthest << "\n";
+            }
         }
 
-        nearestFile << nearest << "\n";
-        furthestFile << furthest << "\n";
+        #pragma omp atomic
+        totalNearest += threadNearestSum;
+        #pragma omp atomic
+        totalFurthest += threadFurthestSum;
     }
 
     nearestFile.close();
     furthestFile.close();
-    std::cout << "Nearest and furthest distances have been saved to 'nearest.txt' and 'furthest.txt'." << std::endl;
+
+    double avgNearest = totalNearest / locations.size();
+    double avgFurthest = totalFurthest / locations.size();
+    std::cout << "Average nearest distance (standard): " << avgNearest << std::endl;
+    std::cout << "Average furthest distance (standard): " << avgFurthest << std::endl;
+}
+
+// Function to calculate nearest and furthest distances using wraparound geometry with OpenMP
+void calculateWraparoundDistances(const std::vector<std::pair<double, double>>& locations) {
+    std::ofstream nearestFile("nearest_wraparound.txt");
+    std::ofstream furthestFile("furthest_wraparound.txt");
+
+    if (!nearestFile.is_open() || !furthestFile.is_open()) {
+        std::cerr << "Error: Could not open output files for wraparound distances." << std::endl;
+        return;
+    }
+
+    double totalNearest = 0.0;
+    double totalFurthest = 0.0;
+
+    #pragma omp parallel
+    {
+        double threadNearestSum = 0.0;
+        double threadFurthestSum = 0.0;
+
+        #pragma omp for schedule(dynamic)
+        for (size_t i = 0; i < locations.size(); ++i) {
+            double nearest = std::numeric_limits<double>::max();
+            double furthest = 0.0;
+
+            for (size_t j = 0; j < locations.size(); ++j) {
+                if (i == j) continue;
+
+                double distance = calculateWraparoundDistance(locations[i].first, locations[i].second,
+                                                              locations[j].first, locations[j].second);
+                nearest = std::min(nearest, distance);
+                furthest = std::max(furthest, distance);
+            }
+
+            threadNearestSum += nearest;
+            threadFurthestSum += furthest;
+
+            #pragma omp critical
+            {
+                nearestFile << nearest << "\n";
+                furthestFile << furthest << "\n";
+            }
+        }
+
+        #pragma omp atomic
+        totalNearest += threadNearestSum;
+        #pragma omp atomic
+        totalFurthest += threadFurthestSum;
+    }
+
+    nearestFile.close();
+    furthestFile.close();
+
+    double avgNearest = totalNearest / locations.size();
+    double avgFurthest = totalFurthest / locations.size();
+    std::cout << "Average nearest distance (wraparound): " << avgNearest << std::endl;
+    std::cout << "Average furthest distance (wraparound): " << avgFurthest << std::endl;
 }
 
 int main() {
-    // Update the filename if needed
     std::string filename = "100000 locations.csv";
     std::vector<std::pair<double, double>> locations = readCSV(filename);
 
-    // Verify that locations were loaded
     if (locations.empty()) {
         std::cerr << "No locations loaded. Exiting program." << std::endl;
         return 1;
     }
 
-    // Calculate standard distances
+    // Measure runtime for standard distances
+    auto start = std::chrono::high_resolution_clock::now();
     calculateDistances(locations);
+    auto end = std::chrono::high_resolution_clock::now();
+    std::cout << "Standard geometry runtime: "
+              << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
+              << " ms" << std::endl;
 
-    // Calculate wraparound distances
+    // Measure runtime for wraparound distances
+    start = std::chrono::high_resolution_clock::now();
     calculateWraparoundDistances(locations);
+    end = std::chrono::high_resolution_clock::now();
+    std::cout << "Wraparound geometry runtime: "
+              << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
+              << " ms" << std::endl;
 
     return 0;
 }
