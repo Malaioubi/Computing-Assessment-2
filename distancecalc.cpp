@@ -69,9 +69,9 @@ double calculateWraparoundDistance(double x1, double y1, double x2, double y2) {
 }
 
 // Function to calculate nearest and furthest distances using standard geometry with OpenMP
-void calculateDistances(const std::vector<std::pair<double, double>>& locations) {
-    std::ofstream nearestFile("nearest.txt");
-    std::ofstream furthestFile("furthest.txt");
+void calculateDistances(const std::vector<std::pair<double, double>>& locations, const std::string& results) {
+    std::ofstream nearestFile("nearest_" + results + ".txt");
+    std::ofstream furthestFile("furthest_" + results + ".txt");
 
     if (!nearestFile.is_open() || !furthestFile.is_open()) {
         std::cerr << "Error: Could not open output files." << std::endl;
@@ -86,7 +86,7 @@ void calculateDistances(const std::vector<std::pair<double, double>>& locations)
         double threadNearestSum = 0.0;
         double threadFurthestSum = 0.0;
 
-        #pragma omp for schedule(dynamic)
+        #pragma omp for schedule(static)
         for (size_t i = 0; i < locations.size(); ++i) {
             double nearest = std::numeric_limits<double>::max();
             double furthest = 0.0;
@@ -126,9 +126,9 @@ void calculateDistances(const std::vector<std::pair<double, double>>& locations)
 }
 
 // Function to calculate nearest and furthest distances using wraparound geometry with OpenMP
-void calculateWraparoundDistances(const std::vector<std::pair<double, double>>& locations) {
-    std::ofstream nearestFile("nearest_wraparound.txt");
-    std::ofstream furthestFile("furthest_wraparound.txt");
+void calculateWraparoundDistances(const std::vector<std::pair<double, double>>& locations, const std::string& results) {
+    std::ofstream nearestFile("nearest_wraparoundtest_" + results + ".txt");
+    std::ofstream furthestFile("furthest_wraparoundtest_" + results + ".txt");
 
     if (!nearestFile.is_open() || !furthestFile.is_open()) {
         std::cerr << "Error: Could not open output files for wraparound distances." << std::endl;
@@ -143,7 +143,7 @@ void calculateWraparoundDistances(const std::vector<std::pair<double, double>>& 
         double threadNearestSum = 0.0;
         double threadFurthestSum = 0.0;
 
-        #pragma omp for schedule(dynamic)
+        #pragma omp for schedule(static)
         for (size_t i = 0; i < locations.size(); ++i) {
             double nearest = std::numeric_limits<double>::max();
             double furthest = 0.0;
@@ -184,12 +184,15 @@ void calculateWraparoundDistances(const std::vector<std::pair<double, double>>& 
 
 int main() {
     // Prompt user to choose input method
+    std ::string results;
     std::cout << "Select input method:\n";
     std::cout << "1. Read from CSV file\n";
     std::cout << "2. Generate random locations\n";
     std::cout << "Enter choice (1 or 2): ";
+
     int choice;
     std::cin >> choice;
+
 
     std::vector<std::pair<double, double>> locations;
 
@@ -197,6 +200,8 @@ int main() {
         std::string filename;
         std::cout << "Enter CSV filename: ";
         std::cin >> filename;
+
+        
 
         locations = readCSV(filename);
         if (locations.empty()) {
@@ -214,9 +219,12 @@ int main() {
         return 1;
     }
 
+    std::cout << "Output filename: ";
+    std::cin >> results; 
+
     // Measure runtime for standard distances
     auto start = std::chrono::high_resolution_clock::now();
-    calculateDistances(locations);
+    calculateDistances(locations, results);
     auto end = std::chrono::high_resolution_clock::now();
     std::cout << "Standard geometry runtime: "
               << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
@@ -224,7 +232,7 @@ int main() {
 
     // Measure runtime for wraparound distances
     start = std::chrono::high_resolution_clock::now();
-    calculateWraparoundDistances(locations);
+    calculateWraparoundDistances(locations, results);
     end = std::chrono::high_resolution_clock::now();
     std::cout << "Wraparound geometry runtime: "
               << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
