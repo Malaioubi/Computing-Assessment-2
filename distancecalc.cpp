@@ -6,6 +6,7 @@
 #include <limits>
 #include <utility>
 #include <chrono>
+#include <random>
 #include <omp.h>
 
 // Function to read CSV file and store coordinates in a vector of pairs
@@ -30,6 +31,24 @@ std::vector<std::pair<double, double>> readCSV(const std::string& filename) {
     }
 
     file.close();
+    return locations;
+}
+
+// Function to generate random locations within [0, 1] x [0, 1]
+std::vector<std::pair<double, double>> generateRandomLocations(size_t numPoints) {
+    std::vector<std::pair<double, double>> locations;
+    locations.reserve(numPoints);
+
+    std::random_device rd;
+    std::mt19937 gen(rd()); // Mersenne Twister engine
+    std::uniform_real_distribution<> dis(0.0, 1.0);
+
+    for (size_t i = 0; i < numPoints; ++i) {
+        double x = dis(gen);
+        double y = dis(gen);
+        locations.emplace_back(x, y);
+    }
+
     return locations;
 }
 
@@ -64,10 +83,10 @@ void calculateDistances(const std::vector<std::pair<double, double>>& locations)
 
     #pragma omp parallel
     {
-        double threadNearestSum = 0.0; // Local reduction for nearest
-        double threadFurthestSum = 0.0; // Local reduction for furthest
+        double threadNearestSum = 0.0;
+        double threadFurthestSum = 0.0;
 
-        #pragma omp for schedule(static) // Parallel loop for scheduling
+        #pragma omp for schedule(dynamic)
         for (size_t i = 0; i < locations.size(); ++i) {
             double nearest = std::numeric_limits<double>::max();
             double furthest = 0.0;
@@ -124,7 +143,7 @@ void calculateWraparoundDistances(const std::vector<std::pair<double, double>>& 
         double threadNearestSum = 0.0;
         double threadFurthestSum = 0.0;
 
-        #pragma omp for schedule(static)
+        #pragma omp for schedule(dynamic)
         for (size_t i = 0; i < locations.size(); ++i) {
             double nearest = std::numeric_limits<double>::max();
             double furthest = 0.0;
@@ -164,11 +183,34 @@ void calculateWraparoundDistances(const std::vector<std::pair<double, double>>& 
 }
 
 int main() {
-    std::string filename = "100000 locations.csv";
-    std::vector<std::pair<double, double>> locations = readCSV(filename);
+    // Prompt user to choose input method
+    std::cout << "Select input method:\n";
+    std::cout << "1. Read from CSV file\n";
+    std::cout << "2. Generate random locations\n";
+    std::cout << "Enter choice (1 or 2): ";
+    int choice;
+    std::cin >> choice;
 
-    if (locations.empty()) {
-        std::cerr << "No locations loaded. Exiting program." << std::endl;
+    std::vector<std::pair<double, double>> locations;
+
+    if (choice == 1) {
+        std::string filename;
+        std::cout << "Enter CSV filename: ";
+        std::cin >> filename;
+
+        locations = readCSV(filename);
+        if (locations.empty()) {
+            std::cerr << "No locations loaded. Exiting program." << std::endl;
+            return 1;
+        }
+    } else if (choice == 2) {
+        size_t numPoints;
+        std::cout << "Enter number of random points to generate: ";
+        std::cin >> numPoints;
+
+        locations = generateRandomLocations(numPoints);
+    } else {
+        std::cerr << "Invalid choice. Exiting program." << std::endl;
         return 1;
     }
 
