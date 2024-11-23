@@ -68,8 +68,7 @@ double calculateWraparoundDistance(double x1, double y1, double x2, double y2) {
     return std::sqrt(wrapDx * wrapDx + wrapDy * wrapDy);
 }
 
-// Combined function to calculate distances and averages
-void calculateAllDistances(const std::vector<std::pair<double, double>>& locations, const std::string& baseFilename) {
+void calculateAllDistances(const std::vector<std::pair<double, double>>& locations, const std::string& baseFilename, const std::string& scheduleType) {
     size_t numPoints = locations.size();
 
     // Prepare files for output
@@ -88,10 +87,22 @@ void calculateAllDistances(const std::vector<std::pair<double, double>>& locatio
     double totalNearestStandard = 0.0, totalFurthestStandard = 0.0;
     double totalNearestWraparound = 0.0, totalFurthestWraparound = 0.0;
 
+    // Select scheduling based on user input
+    omp_sched_t ompSchedule;
+    if (scheduleType == "static") {
+        ompSchedule = omp_sched_static;
+    } else if (scheduleType == "dynamic") {
+        ompSchedule = omp_sched_dynamic;
+    } else {
+        std::cerr << "Invalid schedule type. Defaulting to static.\n";
+        ompSchedule = omp_sched_static;
+    }
+    omp_set_schedule(ompSchedule, 1); // Default chunk size is 1
+
     // Measure standard geometry runtime
     auto start = std::chrono::high_resolution_clock::now();
 
-    #pragma omp parallel for reduction(+:totalNearestStandard, totalFurthestStandard)
+    #pragma omp parallel for schedule(runtime) reduction(+:totalNearestStandard, totalFurthestStandard)
     for (size_t i = 0; i < numPoints; ++i) {
         double nearestStandard = std::numeric_limits<double>::max();
         double furthestStandard = 0.0;
@@ -119,7 +130,7 @@ void calculateAllDistances(const std::vector<std::pair<double, double>>& locatio
     // Measure wraparound geometry runtime
     start = std::chrono::high_resolution_clock::now();
 
-    #pragma omp parallel for reduction(+:totalNearestWraparound, totalFurthestWraparound)
+    #pragma omp parallel for schedule(runtime) reduction(+:totalNearestWraparound, totalFurthestWraparound)
     for (size_t i = 0; i < numPoints; ++i) {
         double nearestWraparound = std::numeric_limits<double>::max();
         double furthestWraparound = 0.0;
@@ -196,13 +207,18 @@ int main() {
         return 1;
     }
 
+    // User input for scheduling type
+    std::string scheduleType;
+    std::cout << "Enter OpenMP scheduling type (static, dynamic): ";
+    std::cin >> scheduleType;
+
     // Output filename base
     std::string baseFilename;
     std::cout << "Enter base output filename (without extension): ";
     std::cin >> baseFilename;
 
     // Perform calculations
-    calculateAllDistances(locations, baseFilename);
+    calculateAllDistances(locations, baseFilename, scheduleType);
 
     return 0;
 }
