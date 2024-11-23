@@ -67,7 +67,7 @@ void calculateDistances(const std::vector<std::pair<double, double>>& locations)
         double threadNearestSum = 0.0; // Local reduction for nearest
         double threadFurthestSum = 0.0; // Local reduction for furthest
 
-        #pragma omp for schedule(dynamic) // Parallel loop for dynamic scheduling
+        #pragma omp for schedule(static) // Parallel loop for scheduling
         for (size_t i = 0; i < locations.size(); ++i) {
             double nearest = std::numeric_limits<double>::max();
             double furthest = 0.0;
@@ -124,7 +124,7 @@ void calculateWraparoundDistances(const std::vector<std::pair<double, double>>& 
         double threadNearestSum = 0.0;
         double threadFurthestSum = 0.0;
 
-        #pragma omp for schedule(dynamic)
+        #pragma omp for schedule(static)
         for (size_t i = 0; i < locations.size(); ++i) {
             double nearest = std::numeric_limits<double>::max();
             double furthest = 0.0;
