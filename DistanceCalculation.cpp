@@ -290,7 +290,23 @@ int main() {
         std::cout << "Running in serial mode...\n";
     }
     
-    runCalculations(locations, baseFilename, runInParallel);
+    // User input for naive or optimised implementation
+    int algorithmChoice;
+    std::cout << "Select algorithm:\n1. Naive\n2. Optimised\nEnter choice (1 or 2): ";
+    std::cin >> algorithmChoice;
+
+    if (algorithmChoice == 1) {
+        // Run naive calculations
+        std::cout << "Running naive algorithm...\n";
+        runCalculations(locations, baseFilename, runInParallel);
+    } else if (algorithmChoice == 2) {
+        // Run optimised calculations
+        std::cout << "Running optimised algorithm...\n";
+        calculateOptimisedDistances(locations, baseFilename, runInParallel);
+    } else {
+        std::cerr << "Invalid algorithm choice. Exiting program.\n";
+        return 1;
+    }
 
     return 0;
 }
