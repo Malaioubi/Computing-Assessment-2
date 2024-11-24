@@ -52,132 +52,142 @@ std::vector<std::pair<double, double>> generateRandomLocations(size_t numPoints)
     return locations;
 }
 
-// Function to calculate Euclidean distance
-double calculateDistance(double x1, double y1, double x2, double y2) {
-    return std::sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
-}
-
-// Function to calculate wraparound distance
-double calculateWraparoundDistance(double x1, double y1, double x2, double y2) {
-    double dx = std::abs(x2 - x1);
-    double dy = std::abs(y2 - y1);
-
-    double wrapDx = std::min(dx, 1.0 - dx);
-    double wrapDy = std::min(dy, 1.0 - dy);
-
-    return std::sqrt(wrapDx * wrapDx + wrapDy * wrapDy);
-}
-
-void calculateAllDistances(const std::vector<std::pair<double, double>>& locations, const std::string& baseFilename, const std::string& scheduleType) {
+void calculateDistances(const std::vector<std::pair<double, double>>& locations, const std::string& baseFilename, bool runInParallel) {
     size_t numPoints = locations.size();
 
-    // Prepare files for output
     std::ofstream nearestStandardFile(baseFilename + "_standard_nearest.txt");
     std::ofstream furthestStandardFile(baseFilename + "_standard_furthest.txt");
-    std::ofstream nearestWraparoundFile(baseFilename + "_wraparound_nearest.txt");
-    std::ofstream furthestWraparoundFile(baseFilename + "_wraparound_furthest.txt");
 
-    if (!nearestStandardFile.is_open() || !furthestStandardFile.is_open() || 
-        !nearestWraparoundFile.is_open() || !furthestWraparoundFile.is_open()) {
+    if (!nearestStandardFile.is_open() || !furthestStandardFile.is_open()) {
         std::cerr << "Error: Could not open output files.\n";
         return;
     }
 
-    // Variables for averages
     double totalNearestStandard = 0.0, totalFurthestStandard = 0.0;
-    double totalNearestWraparound = 0.0, totalFurthestWraparound = 0.0;
 
-    // Select scheduling based on user input
-    omp_sched_t ompSchedule;
-    if (scheduleType == "static") {
-        ompSchedule = omp_sched_static;
-    } else if (scheduleType == "dynamic") {
-        ompSchedule = omp_sched_dynamic;
-    } else {
-        std::cerr << "Invalid schedule type. Defaulting to static.\n";
-        ompSchedule = omp_sched_static;
-    }
-    omp_set_schedule(ompSchedule, 1); // Default chunk size is 1
+    if (runInParallel) {
+        // Parallel implementation
+        #pragma omp parallel for schedule(runtime) reduction(+:totalNearestStandard, totalFurthestStandard)
+        for (size_t i = 0; i < numPoints; ++i) {
+            double nearestStandard = std::numeric_limits<double>::max();
+            double furthestStandard = 0.0;
 
-    // Measure standard geometry runtime
-    auto start = std::chrono::high_resolution_clock::now();
+            for (size_t j = 0; j < numPoints; ++j) {
+                if (i == j) continue;
+                double dist = calculateDistance(locations[i].first, locations[i].second, locations[j].first, locations[j].second);
+                nearestStandard = std::min(nearestStandard, dist);
+                furthestStandard = std::max(furthestStandard, dist);
+            }
 
-    #pragma omp parallel for schedule(runtime) reduction(+:totalNearestStandard, totalFurthestStandard)
-    for (size_t i = 0; i < numPoints; ++i) {
-        double nearestStandard = std::numeric_limits<double>::max();
-        double furthestStandard = 0.0;
+            #pragma omp critical
+            {
+                nearestStandardFile << nearestStandard << "\n";
+                furthestStandardFile << furthestStandard << "\n";
+            }
 
-        for (size_t j = 0; j < numPoints; ++j) {
-            if (i == j) continue;
-            double dist = calculateDistance(locations[i].first, locations[i].second, locations[j].first, locations[j].second);
-            nearestStandard = std::min(nearestStandard, dist);
-            furthestStandard = std::max(furthestStandard, dist);
+            totalNearestStandard += nearestStandard;
+            totalFurthestStandard += furthestStandard;
         }
+    } else {
+        // Serial implementation
+        for (size_t i = 0; i < numPoints; ++i) {
+            double nearestStandard = std::numeric_limits<double>::max();
+            double furthestStandard = 0.0;
 
-        #pragma omp critical
-        {
+            for (size_t j = 0; j < numPoints; ++j) {
+                if (i == j) continue;
+                double dist = calculateDistance(locations[i].first, locations[i].second, locations[j].first, locations[j].second);
+                nearestStandard = std::min(nearestStandard, dist);
+                furthestStandard = std::max(furthestStandard, dist);
+            }
+
             nearestStandardFile << nearestStandard << "\n";
             furthestStandardFile << furthestStandard << "\n";
-        }
 
-        totalNearestStandard += nearestStandard;
-        totalFurthestStandard += furthestStandard;
+            totalNearestStandard += nearestStandard;
+            totalFurthestStandard += furthestStandard;
+        }
     }
 
-    auto end = std::chrono::high_resolution_clock::now();
-    double runtimeStandard = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-
-    // Measure wraparound geometry runtime
-    start = std::chrono::high_resolution_clock::now();
-
-    #pragma omp parallel for schedule(runtime) reduction(+:totalNearestWraparound, totalFurthestWraparound)
-    for (size_t i = 0; i < numPoints; ++i) {
-        double nearestWraparound = std::numeric_limits<double>::max();
-        double furthestWraparound = 0.0;
-
-        for (size_t j = 0; j < numPoints; ++j) {
-            if (i == j) continue;
-            double dist = calculateWraparoundDistance(locations[i].first, locations[i].second, locations[j].first, locations[j].second);
-            nearestWraparound = std::min(nearestWraparound, dist);
-            furthestWraparound = std::max(furthestWraparound, dist);
-        }
-
-        #pragma omp critical
-        {
-            nearestWraparoundFile << nearestWraparound << "\n";
-            furthestWraparoundFile << furthestWraparound << "\n";
-        }
-
-        totalNearestWraparound += nearestWraparound;
-        totalFurthestWraparound += furthestWraparound;
-    }
-
-    end = std::chrono::high_resolution_clock::now();
-    double runtimeWraparound = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-
-    // Calculate averages
     double avgNearestStandard = totalNearestStandard / numPoints;
     double avgFurthestStandard = totalFurthestStandard / numPoints;
-    double avgNearestWraparound = totalNearestWraparound / numPoints;
-    double avgFurthestWraparound = totalFurthestWraparound / numPoints;
 
-    // Output results
     std::cout << "Standard Geometry:\n";
-    std::cout << "  Runtime: " << runtimeStandard << " ms\n";
     std::cout << "  Average Nearest Distance: " << avgNearestStandard << "\n";
     std::cout << "  Average Furthest Distance: " << avgFurthestStandard << "\n";
 
+    nearestStandardFile.close();
+    furthestStandardFile.close();
+}
+
+void calculateWraparoundDistances(const std::vector<std::pair<double, double>>& locations, const std::string& baseFilename, bool runInParallel) {
+    size_t numPoints = locations.size();
+
+    std::ofstream nearestWraparoundFile(baseFilename + "_wraparound_nearest.txt");
+    std::ofstream furthestWraparoundFile(baseFilename + "_wraparound_furthest.txt");
+
+    if (!nearestWraparoundFile.is_open() || !furthestWraparoundFile.is_open()) {
+        std::cerr << "Error: Could not open output files.\n";
+        return;
+    }
+
+    double totalNearestWraparound = 0.0, totalFurthestWraparound = 0.0;
+
+    if (runInParallel) {
+        // Parallel implementation
+        #pragma omp parallel for schedule(runtime) reduction(+:totalNearestWraparound, totalFurthestWraparound)
+        for (size_t i = 0; i < numPoints; ++i) {
+            double nearestWraparound = std::numeric_limits<double>::max();
+            double furthestWraparound = 0.0;
+
+            for (size_t j = 0; j < numPoints; ++j) {
+                if (i == j) continue;
+                double dist = calculateWraparoundDistance(locations[i].first, locations[i].second, locations[j].first, locations[j].second);
+                nearestWraparound = std::min(nearestWraparound, dist);
+                furthestWraparound = std::max(furthestWraparound, dist);
+            }
+
+            #pragma omp critical
+            {
+                nearestWraparoundFile << nearestWraparound << "\n";
+                furthestWraparoundFile << furthestWraparound << "\n";
+            }
+
+            totalNearestWraparound += nearestWraparound;
+            totalFurthestWraparound += furthestWraparound;
+        }
+    } else {
+        // Serial implementation
+        for (size_t i = 0; i < numPoints; ++i) {
+            double nearestWraparound = std::numeric_limits<double>::max();
+            double furthestWraparound = 0.0;
+
+            for (size_t j = 0; j < numPoints; ++j) {
+                if (i == j) continue;
+                double dist = calculateWraparoundDistance(locations[i].first, locations[i].second, locations[j].first, locations[j].second);
+                nearestWraparound = std::min(nearestWraparound, dist);
+                furthestWraparound = std::max(furthestWraparound, dist);
+            }
+
+            nearestWraparoundFile << nearestWraparound << "\n";
+            furthestWraparoundFile << furthestWraparound << "\n";
+
+            totalNearestWraparound += nearestWraparound;
+            totalFurthestWraparound += furthestWraparound;
+        }
+    }
+
+    double avgNearestWraparound = totalNearestWraparound / numPoints;
+    double avgFurthestWraparound = totalFurthestWraparound / numPoints;
+
     std::cout << "Wraparound Geometry:\n";
-    std::cout << "  Runtime: " << runtimeWraparound << " ms\n";
     std::cout << "  Average Nearest Distance: " << avgNearestWraparound << "\n";
     std::cout << "  Average Furthest Distance: " << avgFurthestWraparound << "\n";
 
-    // Close files
-    nearestStandardFile.close();
-    furthestStandardFile.close();
     nearestWraparoundFile.close();
     furthestWraparoundFile.close();
 }
+
 
 int main() {
     std::vector<std::pair<double, double>> locations;
@@ -207,18 +217,44 @@ int main() {
         return 1;
     }
 
-    // User input for scheduling type
-    std::string scheduleType;
-    std::cout << "Enter OpenMP scheduling type (static, dynamic): ";
-    std::cin >> scheduleType;
+    // User input for serial or parallel execution
+    bool runInParallel;
+    std::cout << "Do you want to run the code in parallel? (1 for Yes, 0 for No): ";
+    std::cin >> runInParallel;
 
     // Output filename base
     std::string baseFilename;
     std::cout << "Enter base output filename (without extension): ";
     std::cin >> baseFilename;
 
-    // Perform calculations
-    calculateAllDistances(locations, baseFilename, scheduleType);
+    if (runInParallel) {
+        // Parallel execution
+        std::string scheduleType;
+        std::cout << "Enter OpenMP scheduling type (static, dynamic): ";
+        std::cin >> scheduleType;
+
+        // Parallel calculations for standard and wraparound geometries
+        calculateDistances(locations, baseFilename, true);
+        calculateWraparoundDistances(locations, baseFilename, true);
+    } else {
+        // Serial execution
+        std::cout << "Running in serial mode...\n";
+
+        auto start = std::chrono::high_resolution_clock::now();
+        calculateDistances(locations, baseFilename, false); // Serial for standard geometry
+        auto mid = std::chrono::high_resolution_clock::now();
+        calculateWraparoundDistances(locations, baseFilename, false); // Serial for wraparound geometry
+        auto end = std::chrono::high_resolution_clock::now();
+
+        double runtimeStandard = std::chrono::duration_cast<std::chrono::milliseconds>(mid - start).count();
+        double runtimeWraparound = std::chrono::duration_cast<std::chrono::milliseconds>(end - mid).count();
+
+        // Output runtimes for clarity
+        std::cout << "Serial Execution Times:\n";
+        std::cout << "  Standard Geometry Runtime: " << runtimeStandard << " ms\n";
+        std::cout << "  Wraparound Geometry Runtime: " << runtimeWraparound << " ms\n";
+    }
 
     return 0;
 }
+
