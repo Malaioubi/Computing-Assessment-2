@@ -360,10 +360,20 @@ int main() {
     runInParallel = (executionChoice == 2);
 
     if (runInParallel) {
+        // Parallel execution settings
         int numThreads;
         std::cout << "Enter number of threads: ";
         std::cin >> numThreads;
         omp_set_num_threads(numThreads);
+
+        // User input for scheduling type
+        std::string scheduleType;
+        std::cout << "Enter OpenMP scheduling type (static, dynamic): ";
+        std::cin >> scheduleType;
+
+        std::cout << "Running in parallel mode with " << numThreads << " threads using " << scheduleType << " scheduling.\n";
+    } else {
+        std::cout << "Running in serial mode...\n";
     }
 
     // User input for naive or optimised implementation
@@ -371,9 +381,12 @@ int main() {
     std::cout << "Select algorithm:\n1. Naive\n2. Optimised\nEnter choice (1 or 2): ";
     std::cin >> algorithmChoice;
 
+    // Run calculations based on user choices
     if (algorithmChoice == 1) {
+        std::cout << "Running naive algorithm...\n";
         runCalculations(locations, baseFilename, runInParallel, false);
     } else if (algorithmChoice == 2) {
+        std::cout << "Running optimised algorithm...\n";
         runCalculations(locations, baseFilename, runInParallel, true);
     } else {
         std::cerr << "Invalid algorithm choice. Exiting program.\n";
@@ -382,4 +395,5 @@ int main() {
 
     return 0;
 }
+
 
