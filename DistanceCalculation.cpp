@@ -74,7 +74,10 @@ void calculateDistances(const std::vector<std::pair<double, double>>& locations,
 
             for (size_t j = 0; j < numPoints; ++j) {
                 if (i == j) continue;
-                double dist = calculateDistance(locations[i].first, locations[i].second, locations[j].first, locations[j].second);
+                double dx = std::abs(locations[j].first - locations[i].first);
+                double dy = std::abs(locations[j].second - locations[i].second);
+                double dist = std::sqrt(dx * dx + dy * dy);
+
                 nearestStandard = std::min(nearestStandard, dist);
                 furthestStandard = std::max(furthestStandard, dist);
             }
@@ -96,7 +99,10 @@ void calculateDistances(const std::vector<std::pair<double, double>>& locations,
 
             for (size_t j = 0; j < numPoints; ++j) {
                 if (i == j) continue;
-                double dist = calculateDistance(locations[i].first, locations[i].second, locations[j].first, locations[j].second);
+                double dx = std::abs(locations[j].first - locations[i].first);
+                double dy = std::abs(locations[j].second - locations[i].second);
+                double dist = std::sqrt(dx * dx + dy * dy);
+
                 nearestStandard = std::min(nearestStandard, dist);
                 furthestStandard = std::max(furthestStandard, dist);
             }
@@ -142,7 +148,12 @@ void calculateWraparoundDistances(const std::vector<std::pair<double, double>>& 
 
             for (size_t j = 0; j < numPoints; ++j) {
                 if (i == j) continue;
-                double dist = calculateWraparoundDistance(locations[i].first, locations[i].second, locations[j].first, locations[j].second);
+                double dx = std::abs(locations[j].first - locations[i].first);
+                double dy = std::abs(locations[j].second - locations[i].second);
+                double wrapDx = std::min(dx, 1.0 - dx);
+                double wrapDy = std::min(dy, 1.0 - dy);
+                double dist = std::sqrt(wrapDx * wrapDx + wrapDy * wrapDy);
+
                 nearestWraparound = std::min(nearestWraparound, dist);
                 furthestWraparound = std::max(furthestWraparound, dist);
             }
@@ -164,7 +175,12 @@ void calculateWraparoundDistances(const std::vector<std::pair<double, double>>& 
 
             for (size_t j = 0; j < numPoints; ++j) {
                 if (i == j) continue;
-                double dist = calculateWraparoundDistance(locations[i].first, locations[i].second, locations[j].first, locations[j].second);
+                double dx = std::abs(locations[j].first - locations[i].first);
+                double dy = std::abs(locations[j].second - locations[i].second);
+                double wrapDx = std::min(dx, 1.0 - dx);
+                double wrapDy = std::min(dy, 1.0 - dy);
+                double dist = std::sqrt(wrapDx * wrapDx + wrapDy * wrapDy);
+
                 nearestWraparound = std::min(nearestWraparound, dist);
                 furthestWraparound = std::max(furthestWraparound, dist);
             }
