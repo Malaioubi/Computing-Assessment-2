@@ -214,20 +214,109 @@ void calculateWraparoundDistances(const std::vector<std::pair<double, double>>& 
     furthestWraparoundFile.close();
 }
 
-void runCalculations(const std::vector<std::pair<double, double>>& locations, const std::string& baseFilename, bool runInParallel) {
-    auto start = std::chrono::high_resolution_clock::now();
-    calculateDistances(locations, baseFilename, runInParallel);
-    auto mid = std::chrono::high_resolution_clock::now();
-    calculateWraparoundDistances(locations, baseFilename, runInParallel);
-    auto end = std::chrono::high_resolution_clock::now();
+// Optimised function to calculate distances only once
+void calculateOptimisedDistances(const std::vector<std::pair<double, double>>& locations, 
+                                  const std::string& baseFilename, bool runInParallel) {
+    const size_t numPoints = locations.size();
+    std::vector<double> nearestDistances(numPoints, std::numeric_limits<double>::max());
+    std::vector<double> furthestDistances(numPoints, 0.0);
 
-    double runtimeStandard = std::chrono::duration_cast<std::chrono::milliseconds>(mid - start).count();
-    double runtimeWraparound = std::chrono::duration_cast<std::chrono::milliseconds>(end - mid).count();
+    if (runInParallel) {
+        // Parallel implementation
+        #pragma omp parallel for schedule(static)
+        for (size_t i = 0; i < numPoints; ++i) {
+            for (size_t j = i + 1; j < numPoints; ++j) {
+                double dx = std::abs(locations[j].first - locations[i].first);
+                double dy = std::abs(locations[j].second - locations[i].second);
+                double dist = std::sqrt(dx * dx + dy * dy);
 
-    std::cout << (runInParallel ? "Parallel" : "Serial") << " Execution Times:\n";
-    std::cout << "  Standard Geometry Runtime: " << runtimeStandard << " ms\n";
-    std::cout << "  Wraparound Geometry Runtime: " << runtimeWraparound << " ms\n";
+                #pragma omp critical
+                {
+                    nearestDistances[i] = std::min(nearestDistances[i], dist);
+                    furthestDistances[i] = std::max(furthestDistances[i], dist);
+                    nearestDistances[j] = std::min(nearestDistances[j], dist);
+                    furthestDistances[j] = std::max(furthestDistances[j], dist);
+                }
+            }
+        }
+    } else {
+        // Serial implementation
+        for (size_t i = 0; i < numPoints; ++i) {
+            for (size_t j = i + 1; j < numPoints; ++j) {
+                double dx = std::abs(locations[j].first - locations[i].first);
+                double dy = std::abs(locations[j].second - locations[i].second);
+                double dist = std::sqrt(dx * dx + dy * dy);
+
+                nearestDistances[i] = std::min(nearestDistances[i], dist);
+                furthestDistances[i] = std::max(furthestDistances[i], dist);
+                nearestDistances[j] = std::min(nearestDistances[j], dist);
+                furthestDistances[j] = std::max(furthestDistances[j], dist);
+            }
+        }
+    }
+
+    // Calculate averages
+    double totalNearest = 0.0, totalFurthest = 0.0;
+    for (size_t i = 0; i < numPoints; ++i) {
+        totalNearest += nearestDistances[i];
+        totalFurthest += furthestDistances[i];
+    }
+
+    double avgNearest = totalNearest / numPoints;
+    double avgFurthest = totalFurthest / numPoints;
+
+    std::cout << "Optimised " << (runInParallel ? "Parallel" : "Serial") << " Geometry:\n";
+    std::cout << "  Average Nearest Distance: " << avgNearest << "\n";
+    std::cout << "  Average Furthest Distance: " << avgFurthest << "\n";
+
+    // Write results to files
+    std::ofstream nearestFile(baseFilename + "_optimised_nearest.txt");
+    std::ofstream furthestFile(baseFilename + "_optimised_furthest.txt");
+
+    for (size_t i = 0; i < numPoints; ++i) {
+        nearestFile << nearestDistances[i] << "\n";
+        furthestFile << furthestDistances[i] << "\n";
+    }
+
+    nearestFile.close();
+    furthestFile.close();
 }
+
+void runCalculations(const std::vector<std::pair<double, double>>& locations, const std::string& baseFilename, bool runInParallel, bool useOptimised) {
+    auto start = std::chrono::high_resolution_clock::now();
+
+    if (useOptimised) {
+        // Run the optimised calculations
+        std::cout << "Running optimised calculations...\n";
+        calculateOptimisedDistances(locations, baseFilename + "_optimised", runInParallel);
+    } else {
+        // Run the naive calculations for both standard and wraparound geometries
+        std::cout << "Running naive calculations for standard geometry...\n";
+        calculateDistances(locations, baseFilename + "_naive_standard", runInParallel);
+
+        auto mid = std::chrono::high_resolution_clock::now();
+
+        std::cout << "Running naive calculations for wraparound geometry...\n";
+        calculateWraparoundDistances(locations, baseFilename + "_naive_wraparound", runInParallel);
+
+        auto end = std::chrono::high_resolution_clock::now();
+
+        double runtimeStandard = std::chrono::duration_cast<std::chrono::milliseconds>(mid - start).count();
+        double runtimeWraparound = std::chrono::duration_cast<std::chrono::milliseconds>(end - mid).count();
+
+        std::cout << (runInParallel ? "Parallel" : "Serial") << " Naive Execution Times:\n";
+        std::cout << "  Standard Geometry Runtime: " << runtimeStandard << " ms\n";
+        std::cout << "  Wraparound Geometry Runtime: " << runtimeWraparound << " ms\n";
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    double runtimeTotal = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+
+    std::cout << (runInParallel ? "Parallel" : "Serial") << " Total Execution Time (" 
+              << (useOptimised ? "Optimised" : "Naive") << "): " 
+              << runtimeTotal << " ms\n";
+}
+
 
 // Main function to run the program
 int main() {
@@ -260,7 +349,7 @@ int main() {
 
     // User input for output filename
     std::string baseFilename;
-    std::cout << "Enter base output filename : ";
+    std::cout << "Enter base output filename: ";
     std::cin >> baseFilename;
 
     // User input for serial or parallel execution
@@ -271,38 +360,21 @@ int main() {
     runInParallel = (executionChoice == 2);
 
     if (runInParallel) {
-        // Parallel execution
-
-        // User input for number of threads 
         int numThreads;
         std::cout << "Enter number of threads: ";
         std::cin >> numThreads;
         omp_set_num_threads(numThreads);
-
-        // User input for scheduling type
-        std::string scheduleType;
-        std::cout << "Enter OpenMP scheduling type (static, dynamic): ";
-        std::cin >> scheduleType;
-
-        std::cout << "Running in parallel mode with " << numThreads << " threads...\n";
-    } else {
-        // Serial execution
-        std::cout << "Running in serial mode...\n";
     }
-    
+
     // User input for naive or optimised implementation
     int algorithmChoice;
     std::cout << "Select algorithm:\n1. Naive\n2. Optimised\nEnter choice (1 or 2): ";
     std::cin >> algorithmChoice;
 
     if (algorithmChoice == 1) {
-        // Run naive calculations
-        std::cout << "Running naive algorithm...\n";
-        runCalculations(locations, baseFilename, runInParallel);
+        runCalculations(locations, baseFilename, runInParallel, false);
     } else if (algorithmChoice == 2) {
-        // Run optimised calculations
-        std::cout << "Running optimised algorithm...\n";
-        calculateOptimisedDistances(locations, baseFilename, runInParallel);
+        runCalculations(locations, baseFilename, runInParallel, true);
     } else {
         std::cerr << "Invalid algorithm choice. Exiting program.\n";
         return 1;
