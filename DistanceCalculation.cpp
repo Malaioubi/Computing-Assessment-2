@@ -24,9 +24,17 @@ std::vector<std::pair<double, double>> readCSV(const std::string& filename) {
         std::stringstream ss(line);
         std::string x_str, y_str;
         if (std::getline(ss, x_str, ',') && std::getline(ss, y_str)) {
-            double x = std::stod(x_str);
-            double y = std::stod(y_str);
-            locations.emplace_back(x, y);
+            try {
+                double x = std::stod(x_str);
+                double y = std::stod(y_str);
+                locations.emplace_back(x, y);
+            } catch (const std::invalid_argument& e) {
+                std::cerr << "Error: Invalid coordinate in line: " << line << std::endl;
+            } catch (const std::out_of_range& e) {
+                std::cerr << "Error: Coordinate out of range in line: " << line << std::endl;
+            }
+        } else {
+            std::cerr << "Error: Malformed line: " << line << std::endl;
         }
     }
 
@@ -34,8 +42,8 @@ std::vector<std::pair<double, double>> readCSV(const std::string& filename) {
     return locations;
 }
 
-// Function to generate random locations within [0, 1] x [0, 1]
-std::vector<std::pair<double, double>> generateRandomLocations(size_t numPoints) {
+// Function to generate random locations 
+std::vector<std::pair<double, double>> generateRandomLocations(const size_t numPoints) {
     std::vector<std::pair<double, double>> locations;
     locations.reserve(numPoints);
 
@@ -54,7 +62,7 @@ std::vector<std::pair<double, double>> generateRandomLocations(size_t numPoints)
 
 // Function to calculate distances for standard geometry either in serial or parallel
 void calculateDistances(const std::vector<std::pair<double, double>>& locations, const std::string& baseFilename, bool runInParallel) {
-    size_t numPoints = locations.size();
+    const size_t numPoints = locations.size();
 
     std::ofstream nearestStandardFile(baseFilename + "_standard_nearest.txt");
     std::ofstream furthestStandardFile(baseFilename + "_standard_furthest.txt");
@@ -129,7 +137,7 @@ void calculateDistances(const std::vector<std::pair<double, double>>& locations,
 
 // Function to calculate distances for wraparound geometry either in serial or parallel
 void calculateWraparoundDistances(const std::vector<std::pair<double, double>>& locations, const std::string& baseFilename, bool runInParallel) {
-    size_t numPoints = locations.size();
+    const size_t numPoints = locations.size();
 
     std::ofstream nearestWraparoundFile(baseFilename + "_wraparound_nearest.txt");
     std::ofstream furthestWraparoundFile(baseFilename + "_wraparound_furthest.txt");
@@ -206,6 +214,21 @@ void calculateWraparoundDistances(const std::vector<std::pair<double, double>>& 
     furthestWraparoundFile.close();
 }
 
+void runCalculations(const std::vector<std::pair<double, double>>& locations, const std::string& baseFilename, bool runInParallel) {
+    auto start = std::chrono::high_resolution_clock::now();
+    calculateDistances(locations, baseFilename, runInParallel);
+    auto mid = std::chrono::high_resolution_clock::now();
+    calculateWraparoundDistances(locations, baseFilename, runInParallel);
+    auto end = std::chrono::high_resolution_clock::now();
+
+    double runtimeStandard = std::chrono::duration_cast<std::chrono::milliseconds>(mid - start).count();
+    double runtimeWraparound = std::chrono::duration_cast<std::chrono::milliseconds>(end - mid).count();
+
+    std::cout << (runInParallel ? "Parallel" : "Serial") << " Execution Times:\n";
+    std::cout << "  Standard Geometry Runtime: " << runtimeStandard << " ms\n";
+    std::cout << "  Wraparound Geometry Runtime: " << runtimeWraparound << " ms\n";
+}
+
 // Main function to run the program
 int main() {
     std::vector<std::pair<double, double>> locations;
@@ -235,70 +258,39 @@ int main() {
         return 1;
     }
 
+    // User input for output filename
+    std::string baseFilename;
+    std::cout << "Enter base output filename : ";
+    std::cin >> baseFilename;
+
     // User input for serial or parallel execution
     bool runInParallel;
-    std::cout << "Do you want to run the code in parallel? (1 for Yes, 0 for No): ";
-    std::cin >> runInParallel;
+    int executionChoice;
+    std::cout << "Code execution method:\n1. Serial\n2. Parallel\nEnter choice (1 or 2): ";
+    std::cin >> executionChoice;
+    runInParallel = (executionChoice == 2);
 
     if (runInParallel) {
         // Parallel execution
 
-        // User input for number of threads
+        // User input for number of threads 
         int numThreads;
         std::cout << "Enter number of threads: ";
         std::cin >> numThreads;
         omp_set_num_threads(numThreads);
 
-        // User input for OpenMP scheduling type
+        // User input for scheduling type
         std::string scheduleType;
         std::cout << "Enter OpenMP scheduling type (static, dynamic): ";
         std::cin >> scheduleType;
 
-        // User input for base output filename
-        std::string baseFilename;
-        std::cout << "Enter base output filename (without extension): ";
-        std::cin >> baseFilename;
-
         std::cout << "Running in parallel mode with " << numThreads << " threads...\n";
-
-        auto start = std::chrono::high_resolution_clock::now();
-        calculateDistances(locations, baseFilename, true);
-        auto mid = std::chrono::high_resolution_clock::now();
-        calculateWraparoundDistances(locations, baseFilename, true);
-        auto end = std::chrono::high_resolution_clock::now();
-
-        double runtimeStandard = std::chrono::duration_cast<std::chrono::milliseconds>(mid - start).count();
-        double runtimeWraparound = std::chrono::duration_cast<std::chrono::milliseconds>(end - mid).count();
-
-        // Output runtimes for clarity
-        std::cout << "Parallel Execution Times:\n";
-        std::cout << "  Standard Geometry Runtime: " << runtimeStandard << " ms\n";
-        std::cout << "  Wraparound Geometry Runtime: " << runtimeWraparound << " ms\n";
-
     } else {
         // Serial execution
-
-        // User input for base output filename
-        std::string baseFilename;
-        std::cout << "Enter base output filename (without extension): ";
-        std::cin >> baseFilename;
-
         std::cout << "Running in serial mode...\n";
-
-        auto start = std::chrono::high_resolution_clock::now();
-        calculateDistances(locations, baseFilename, false); // Serial for standard geometry
-        auto mid = std::chrono::high_resolution_clock::now();
-        calculateWraparoundDistances(locations, baseFilename, false); // Serial for wraparound geometry
-        auto end = std::chrono::high_resolution_clock::now();
-
-        double runtimeStandard = std::chrono::duration_cast<std::chrono::milliseconds>(mid - start).count();
-        double runtimeWraparound = std::chrono::duration_cast<std::chrono::milliseconds>(end - mid).count();
-
-        // Output runtimes for clarity
-        std::cout << "Serial Execution Times:\n";
-        std::cout << "  Standard Geometry Runtime: " << runtimeStandard << " ms\n";
-        std::cout << "  Wraparound Geometry Runtime: " << runtimeWraparound << " ms\n";
     }
+    
+    runCalculations(locations, baseFilename, runInParallel);
 
     return 0;
 }
