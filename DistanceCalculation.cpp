@@ -221,25 +221,51 @@ void calculateOptimisedDistances(const std::vector<std::pair<double, double>>& l
     std::vector<double> furthestDistances(numPoints, 0.0);
 
     if (runInParallel) {
-        // Parallel implementation
-        #pragma omp parallel for schedule(static)
-        for (size_t i = 0; i < numPoints; ++i) {
-            double localNearest = std::numeric_limits<double>::max();
-            double localFurthest = 0.0;
+        // Parallel implementation with thread-local storage
+        std::vector<std::vector<double>> threadNearestDistances, threadFurthestDistances;
 
-            for (size_t j = 0; j < numPoints; ++j) {
-                if (i == j) continue;
-                double dx = locations[j].first - locations[i].first;
-                double dy = locations[j].second - locations[i].second;
-                double dist = std::sqrt(dx * dx + dy * dy);
+        #pragma omp parallel
+        {
+            // Thread-local storage for nearest and furthest distances
+            std::vector<double> localNearestDistances(numPoints, std::numeric_limits<double>::max());
+            std::vector<double> localFurthestDistances(numPoints, 0.0);
 
-                localNearest = std::min(localNearest, dist);
-                localFurthest = std::max(localFurthest, dist);
+            #pragma omp for schedule(dynamic)
+            for (size_t i = 0; i < numPoints; ++i) {
+                for (size_t j = i + 1; j < numPoints; ++j) { // Only process each pair once (i < j)
+                    double dx = locations[j].first - locations[i].first;
+                    double dy = locations[j].second - locations[i].second;
+                    double dist = std::sqrt(dx * dx + dy * dy);
+
+                    // Update thread-local distances for both points
+                    localNearestDistances[i] = std::min(localNearestDistances[i], dist);
+                    localFurthestDistances[i] = std::max(localFurthestDistances[i], dist);
+
+                    localNearestDistances[j] = std::min(localNearestDistances[j], dist);
+                    localFurthestDistances[j] = std::max(localFurthestDistances[j], dist);
+                }
             }
 
-            nearestDistances[i] = localNearest;
-            furthestDistances[i] = localFurthest;
+            // Collect thread-local results
+            #pragma omp critical
+            {
+                threadNearestDistances.push_back(std::move(localNearestDistances));
+                threadFurthestDistances.push_back(std::move(localFurthestDistances));
+            }
         }
+
+        // Merge thread-local results into global results
+        for (const auto& localNearest : threadNearestDistances) {
+            for (size_t i = 0; i < numPoints; ++i) {
+                nearestDistances[i] = std::min(nearestDistances[i], localNearest[i]);
+            }
+        }
+        for (const auto& localFurthest : threadFurthestDistances) {
+            for (size_t i = 0; i < numPoints; ++i) {
+                furthestDistances[i] = std::max(furthestDistances[i], localFurthest[i]);
+            }
+        }
+
     } else {
         // Serial implementation
         for (size_t i = 0; i < numPoints; ++i) {
@@ -295,27 +321,53 @@ void calculateOptimisedWraparoundDistances(const std::vector<std::pair<double, d
     std::vector<double> furthestDistances(numPoints, 0.0);
 
     if (runInParallel) {
-        // Parallel implementation
-        #pragma omp parallel for schedule(static)
-        for (size_t i = 0; i < numPoints; ++i) {
-            double localNearest = std::numeric_limits<double>::max();
-            double localFurthest = 0.0;
+        // Parallel implementation with thread-local storage
+        std::vector<std::vector<double>> threadNearestDistances, threadFurthestDistances;
 
-            for (size_t j = 0; j < numPoints; ++j) {
-                if (i == j) continue;
-                double dx = locations[j].first - locations[i].first;
-                double dy = locations[j].second - locations[i].second;
-                double wrapDx = std::min(dx, 1.0 - dx);
-                double wrapDy = std::min(dy, 1.0 - dy);
-                double dist = std::sqrt(wrapDx * wrapDx + wrapDy * wrapDy);
+        #pragma omp parallel
+        {
+            // Thread-local storage for nearest and furthest distances
+            std::vector<double> localNearestDistances(numPoints, std::numeric_limits<double>::max());
+            std::vector<double> localFurthestDistances(numPoints, 0.0);
 
-                localNearest = std::min(localNearest, dist);
-                localFurthest = std::max(localFurthest, dist);
+            #pragma omp for schedule(dynamic)
+            for (size_t i = 0; i < numPoints; ++i) {
+                for (size_t j = i + 1; j < numPoints; ++j) { // Only process each pair once (i < j)
+                    double dx = locations[j].first - locations[i].first;
+                    double dy = locations[j].second - locations[i].second;
+                    double wrapDx = std::min(dx, 1.0 - dx);
+                    double wrapDy = std::min(dy, 1.0 - dy);
+                    double dist = std::sqrt(wrapDx * wrapDx + wrapDy * wrapDy);
+
+                    // Update thread-local distances for both points
+                    localNearestDistances[i] = std::min(localNearestDistances[i], dist);
+                    localFurthestDistances[i] = std::max(localFurthestDistances[i], dist);
+
+                    localNearestDistances[j] = std::min(localNearestDistances[j], dist);
+                    localFurthestDistances[j] = std::max(localFurthestDistances[j], dist);
+                }
             }
 
-            nearestDistances[i] = localNearest;
-            furthestDistances[i] = localFurthest;
+            // Collect thread-local results
+            #pragma omp critical
+            {
+                threadNearestDistances.push_back(std::move(localNearestDistances));
+                threadFurthestDistances.push_back(std::move(localFurthestDistances));
+            }
         }
+
+        // Merge thread-local results into global results
+        for (const auto& localNearest : threadNearestDistances) {
+            for (size_t i = 0; i < numPoints; ++i) {
+                nearestDistances[i] = std::min(nearestDistances[i], localNearest[i]);
+            }
+        }
+        for (const auto& localFurthest : threadFurthestDistances) {
+            for (size_t i = 0; i < numPoints; ++i) {
+                furthestDistances[i] = std::max(furthestDistances[i], localFurthest[i]);
+            }
+        }
+
     } else {
         // Serial implementation
         for (size_t i = 0; i < numPoints; ++i) {
@@ -334,6 +386,7 @@ void calculateOptimisedWraparoundDistances(const std::vector<std::pair<double, d
                 localFurthest = std::max(localFurthest, dist);
             }
 
+            #pragma omp critical
             nearestDistances[i] = localNearest;
             furthestDistances[i] = localFurthest;
         }
